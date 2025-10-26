@@ -1,40 +1,32 @@
 import React from 'react';
 
-const meterColor = (v) => {
-  if (v > 0.66) return 'bg-green-500';
-  if (v > 0.33) return 'bg-yellow-500';
-  return 'bg-red-500';
-};
-
-const ProgressBar = ({ value }) => (
-  <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
-    <div className={`h-full ${meterColor(value)} transition-all`} style={{ width: `${Math.round(value * 100)}%` }} />
-  </div>
-);
-
-const FaceStats = ({ peopleCount = 0, happiness = 0, eyeOpen = 0 }) => {
+export default function FaceStats({ peopleCount = 0, happiness = 0, eyeOpen = 0 }) {
+  const pct = (v) => Math.round(Math.max(0, Math.min(1, Number(v) || 0)) * 100);
   return (
-    <div className="space-y-4">
-      <div>
-        <div className="text-sm text-gray-500">People detected</div>
-        <div className="text-2xl font-semibold">{peopleCount}</div>
+    <div className="p-4 rounded-xl bg-white/70 dark:bg-zinc-900/70 backdrop-blur border border-zinc-200/50 dark:border-zinc-800/50">
+      <h3 className="text-lg font-semibold mb-3">Face Stats</h3>
+      <div className="flex items-center justify-between mb-4">
+        <span className="text-sm text-zinc-600 dark:text-zinc-300">People</span>
+        <span className="font-bold text-xl">{peopleCount}</span>
+      </div>
+      <div className="mb-3">
+        <div className="flex items-center justify-between text-sm mb-1">
+          <span>Happiness</span>
+          <span>{pct(happiness)}%</span>
+        </div>
+        <div className="h-2 bg-zinc-200 dark:bg-zinc-800 rounded">
+          <div className="h-2 bg-emerald-500 rounded" style={{ width: `${pct(happiness)}%` }} />
+        </div>
       </div>
       <div>
-        <div className="flex items-center justify-between mb-1">
-          <span className="text-sm text-gray-500">Happiness</span>
-          <span className="text-sm font-medium">{Math.round(happiness * 100)}%</span>
+        <div className="flex items-center justify-between text-sm mb-1">
+          <span>Eye Openness</span>
+          <span>{pct(eyeOpen)}%</span>
         </div>
-        <ProgressBar value={happiness} />
-      </div>
-      <div>
-        <div className="flex items-center justify-between mb-1">
-          <span className="text-sm text-gray-500">Eye openness</span>
-          <span className="text-sm font-medium">{Math.round(eyeOpen * 100)}%</span>
+        <div className="h-2 bg-zinc-200 dark:bg-zinc-800 rounded">
+          <div className="h-2 bg-sky-500 rounded" style={{ width: `${pct(eyeOpen)}%` }} />
         </div>
-        <ProgressBar value={eyeOpen} />
       </div>
     </div>
   );
-};
-
-export default FaceStats;
+}

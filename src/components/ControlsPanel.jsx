@@ -1,26 +1,21 @@
 import React from 'react';
 
-const ControlsPanel = ({ showOverlays, setShowOverlays }) => {
+export default function ControlsPanel({ showOverlays, setShowOverlays }) {
   return (
-    <div className="flex items-center justify-between p-3 rounded-lg bg-white/70 backdrop-blur border border-gray-200">
-      <div>
-        <div className="text-sm font-medium">Live Camera Analysis</div>
-        <div className="text-xs text-gray-500">Enable or disable landmarks and boxes</div>
-      </div>
-      <label className="inline-flex items-center cursor-pointer select-none">
+    <div className="p-4 rounded-xl bg-white/70 dark:bg-zinc-900/70 backdrop-blur border border-zinc-200/50 dark:border-zinc-800/50">
+      <h3 className="text-lg font-semibold mb-3">Controls</h3>
+      <label className="flex items-center gap-3 cursor-pointer select-none">
         <input
           type="checkbox"
-          className="sr-only peer"
+          className="h-4 w-4 accent-emerald-500"
           checked={showOverlays}
           onChange={(e) => setShowOverlays(e.target.checked)}
         />
-        <div className="w-10 h-6 bg-gray-200 rounded-full peer peer-checked:bg-blue-600 relative transition-colors">
-          <div className="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform peer-checked:translate-x-4" />
-        </div>
-        <span className="ml-2 text-sm text-gray-700">Overlays</span>
+        <span className="text-sm">Show overlays</span>
       </label>
+      <p className="text-xs text-zinc-500 mt-3">
+        Tip: Ensure good lighting and keep hands fully in view for best results.
+      </p>
     </div>
   );
-};
-
-export default ControlsPanel;
+}

@@ -1,203 +1,218 @@
 import React, { useEffect, useRef, useState } from 'react';
-import Human from '@vladmandic/human';
 
-const humanConfig = {
-  cacheSensitivity: 0.75,
-  filter: { enabled: true },
-  // Use official CDN for models so it works out of the box
-  modelBasePath: 'https://vladmandic.github.io/human/models',
-  face: { enabled: true, mesh: true, iris: true, attention: false, emotion: true, detector: { rotation: true } },
-  hand: { enabled: true, detector: { rotation: true } },
-  body: { enabled: false },
-  gesture: { enabled: false },
-};
-
-function distance(a, b) {
-  const dx = a[0] - b[0];
-  const dy = a[1] - b[1];
-  return Math.hypot(dx, dy);
-}
-
-function eyeAspectRatio(landmarks) {
-  // MediaPipe FaceMesh indices for both eyes
-  const L = { p1: 33, p2: 160, p3: 158, p4: 133, p5: 153, p6: 144 };
-  const R = { p1: 263, p2: 387, p3: 385, p4: 362, p5: 380, p6: 373 };
-  const l = [L.p1, L.p2, L.p3, L.p4, L.p5, L.p6].map((i) => [landmarks[i].x, landmarks[i].y]);
-  const r = [R.p1, R.p2, R.p3, R.p4, R.p5, R.p6].map((i) => [landmarks[i].x, landmarks[i].y]);
-  const earL = (distance(l[1], l[5]) + distance(l[2], l[4])) / (2 * distance(l[0], l[3]));
-  const earR = (distance(r[1], r[5]) + distance(r[2], r[4])) / (2 * distance(r[0], r[3]));
-  const ear = (earL + earR) / 2;
-  // Normalize EAR approx to 0..1 using rough bounds (0.15..0.35)
-  const norm = Math.min(1, Math.max(0, (ear - 0.15) / (0.35 - 0.15)));
-  return norm;
-}
-
-function countFingers(hand) {
-  const kp = hand.keypoints;
-  if (!kp || kp.length < 21) return 0;
-  const tips = { index: 8, middle: 12, ring: 16, pinky: 20 };
-  const pips = { index: 6, middle: 10, ring: 14, pinky: 18 };
-  let count = 0;
-  // For non-thumb, y smaller than PIP means extended (origin top-left)
-  for (const f of ['index', 'middle', 'ring', 'pinky']) {
-    if (kp[tips[f]].y < kp[pips[f]].y) count += 1;
-  }
-  const thumbTip = kp[4];
-  const thumbIP = kp[3];
-  let isRight = false;
-  if (hand.label) {
-    isRight = hand.label.toLowerCase().includes('right');
-  } else if (hand.handedness) {
-    isRight = hand.handedness.toLowerCase().includes('right');
-  } else {
-    // Heuristic using MCPs (indices 5 and 17)
-    isRight = kp[5].x < kp[17].x;
-  }
-  if (isRight) {
-    if (thumbTip.x > thumbIP.x) count += 1;
-  } else {
-    if (thumbTip.x < thumbIP.x) count += 1;
-  }
-  return count;
-}
-
-const CameraFeed = ({ onUpdate, showOverlays = true }) => {
+// CameraFeed handles: webcam stream, model load, real-time detection, and optional overlays
+export default function CameraFeed({ onUpdate, showOverlays = true }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const humanRef = useRef(null);
+  const rafRef = useRef(null);
   const [ready, setReady] = useState(false);
-  const [fps, setFps] = useState(0);
+
+  // Utility: finger counting using landmark indices similar to MediaPipe
+  const countFingersFromLandmarks = (lm, handedness = 'Right') => {
+    if (!Array.isArray(lm) || lm.length < 21) return 0;
+    // For y-axis, smaller y is higher on screen. Compare fingertip y to PIP y to detect extension
+    const tip = { thumb: 4, index: 8, middle: 12, ring: 16, pinky: 20 };
+    const pip = { thumb: 3, index: 6, middle: 10, ring: 14, pinky: 18 };
+
+    let count = 0;
+    // Thumb: use x-axis relative to hand since it moves sideways
+    // For right hand: thumb extended if tip x > IP x; for left hand: tip x < IP x
+    const thumbExtended = handedness === 'Right'
+      ? lm[tip.thumb].x > lm[pip.thumb].x
+      : lm[tip.thumb].x < lm[pip.thumb].x;
+    if (thumbExtended) count += 1;
+
+    // Other fingers: tip above PIP (smaller y) => extended
+    ['index', 'middle', 'ring', 'pinky'].forEach((k) => {
+      if (lm[tip[k]] && lm[pip[k]] && lm[tip[k]].y < lm[pip[k]].y) count += 1;
+    });
+
+    return count;
+  };
+
+  const drawOverlays = (ctx, res) => {
+    ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+
+    // Faces: draw boxes and landmarks
+    if (res.face) {
+      ctx.strokeStyle = '#22c55e';
+      ctx.lineWidth = 2;
+      res.face.forEach((f) => {
+        if (f.box) {
+          const { x, y, width, height } = f.box;
+          ctx.strokeRect(x, y, width, height);
+        }
+        if (Array.isArray(f.mesh)) {
+          ctx.fillStyle = 'rgba(34,197,94,0.6)';
+          f.mesh.forEach((pt) => {
+            ctx.beginPath();
+            ctx.arc(pt[0], pt[1], 1.2, 0, Math.PI * 2);
+            ctx.fill();
+          });
+        }
+      });
+    }
+
+    // Hands: draw skeleton using connections if provided
+    if (res.hand) {
+      ctx.strokeStyle = '#60a5fa';
+      ctx.lineWidth = 2;
+      res.hand.forEach((h) => {
+        if (Array.isArray(h.landmarks)) {
+          const lm = h.landmarks;
+          // Draw points
+          ctx.fillStyle = 'rgba(96,165,250,0.7)';
+          lm.forEach((p) => {
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
+            ctx.fill();
+          });
+          // Simple lines along each finger (thumb/index/middle/ring/pinky)
+          const chains = [
+            [0, 1, 2, 3, 4],
+            [0, 5, 6, 7, 8],
+            [0, 9, 10, 11, 12],
+            [0, 13, 14, 15, 16],
+            [0, 17, 18, 19, 20],
+          ];
+          ctx.strokeStyle = 'rgba(96,165,250,0.9)';
+          chains.forEach((c) => {
+            ctx.beginPath();
+            c.forEach((idx, i) => {
+              const p = lm[idx];
+              if (!p) return;
+              if (i === 0) ctx.moveTo(p.x, p.y);
+              else ctx.lineTo(p.x, p.y);
+            });
+            ctx.stroke();
+          });
+        }
+      });
+    }
+  };
 
   useEffect(() => {
+    let stream;
     let running = true;
-    const human = new Human(humanConfig);
-    humanRef.current = human;
 
-    async function init() {
+    const setup = async () => {
       try {
+        // Get webcam stream
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await new Promise((resolve) => {
+            videoRef.current.onloadedmetadata = () => resolve();
+          });
+          await videoRef.current.play();
+        }
+
+        // Dynamically load Human ESM from CDN to avoid npm resolution issues
+        const HumanModule = await import('https://cdn.jsdelivr.net/npm/@vladmandic/human/dist/human.esm.js');
+        const Human = HumanModule.default || HumanModule.Human || HumanModule;
+        const human = new Human({
+          debug: false,
+          backend: 'webgl',
+          modelBasePath: 'https://cdn.jsdelivr.net/npm/@vladmandic/human/models',
+          filter: { enabled: true, equalization: true, flip: true },
+          warmup: 'none',
+          face: { enabled: true, detector: { rotation: true }, mesh: { enabled: true }, iris: { enabled: true }, emotion: { enabled: true } },
+          hand: { enabled: true, detector: { rotation: true }, landmarks: { enabled: true } },
+        });
+        humanRef.current = human;
         await human.load();
         await human.warmup();
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
-        if (!videoRef.current) return;
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
         setReady(true);
+
+        const loop = async () => {
+          if (!running || !videoRef.current) return;
+          const result = await human.detect(videoRef.current);
+
+          // Prepare canvas size
+          const v = videoRef.current;
+          const c = canvasRef.current;
+          if (c && v) {
+            if (c.width !== v.videoWidth) c.width = v.videoWidth;
+            if (c.height !== v.videoHeight) c.height = v.videoHeight;
+            if (showOverlays) drawOverlays(c.getContext('2d'), result);
+            else c.getContext('2d').clearRect(0, 0, c.width, c.height);
+          }
+
+          // Face metrics
+          const faces = Array.isArray(result.face) ? result.face : [];
+          const peopleCount = faces.length;
+          let happiness = 0;
+          let eyeOpen = 0;
+          if (faces[0]) {
+            const emotions = Array.isArray(faces[0].emotion) ? faces[0].emotion : [];
+            const happy = emotions.find((e) => (e.label || e.emotion || '').toLowerCase() === 'happy');
+            happiness = happy ? Number(happy.score || 0) : 0;
+            // Approximate eye openness using distance between eyelid landmarks if available
+            const mesh = faces[0].mesh;
+            if (Array.isArray(mesh) && mesh.length > 470) {
+              // Using MediaPipe indices: left eye top/bottom approx
+              const leftTop = mesh[386];
+              const leftBottom = mesh[374];
+              const rightTop = mesh[159];
+              const rightBottom = mesh[145];
+              const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+              const lOpen = leftTop && leftBottom ? dist(leftTop, leftBottom) : 0;
+              const rOpen = rightTop && rightBottom ? dist(rightTop, rightBottom) : 0;
+              // Normalize roughly by face box height if available
+              const fb = faces[0].box;
+              const norm = fb && fb.height ? fb.height : v.videoHeight || 1;
+              eyeOpen = Math.max(0, Math.min(1, ((lOpen + rOpen) / 2) / (norm * 0.06)));
+            }
+          }
+
+          // Hand metrics
+          const hands = Array.isArray(result.hand) ? result.hand : [];
+          let leftFingers = 0;
+          let rightFingers = 0;
+          hands.forEach((h) => {
+            const handedness = (h.handedness || h.label || 'Right');
+            const lm = h.landmarks || h.keypoints || h.keypoints3D;
+            const count = countFingersFromLandmarks(lm || [], handedness.includes('Left') ? 'Left' : 'Right');
+            if (handedness.includes('Left')) leftFingers = Math.max(leftFingers, count);
+            else rightFingers = Math.max(rightFingers, count);
+          });
+
+          onUpdate?.({ peopleCount, happiness, eyeOpen, leftFingers, rightFingers });
+
+          rafRef.current = requestAnimationFrame(loop);
+        };
+
         loop();
-      } catch (e) {
-        console.error('Camera init error', e);
+      } catch (err) {
+        console.error('Camera/Detection init failed:', err);
       }
-    }
+    };
 
-    async function loop() {
-      if (!running || !videoRef.current) return;
-      const t0 = performance.now();
-      const result = await human.detect(videoRef.current);
-
-      const faces = result.face || [];
-      const peopleCount = faces.length;
-      let happiness = 0;
-      let eyeOpen = 0;
-      if (faces.length > 0) {
-        const emotions = faces[0].emotion || [];
-        const happy = emotions.find((e) => e.expression === 'happy');
-        if (happy) happiness = happy.score;
-        if (faces[0].mesh && faces[0].mesh.length > 0) {
-          eyeOpen = eyeAspectRatio(faces[0].mesh);
-        }
-      }
-
-      const hands = result.hand || [];
-      let left = 0, right = 0;
-      for (const h of hands) {
-        const fingers = countFingers(h);
-        let isRight = false;
-        if (h.label) isRight = h.label.toLowerCase().includes('right');
-        else if (h.handedness) isRight = h.handedness.toLowerCase().includes('right');
-        else if (h.box) {
-          const cx = h.box[0] + h.box[2] / 2; // box: [x, y, w, h]
-          const mid = videoRef.current.videoWidth / 2;
-          isRight = cx < mid; // selfie view
-        }
-        if (isRight) right = Math.max(right, fingers); else left = Math.max(left, fingers);
-      }
-
-      onUpdate && onUpdate({ peopleCount, happiness, eyeOpen, leftFingers: left, rightFingers: right });
-
-      // Draw overlays
-      const ctx = canvasRef.current?.getContext('2d');
-      if (ctx && videoRef.current) {
-        const { videoWidth: w, videoHeight: h } = videoRef.current;
-        if (w === 0 || h === 0) {
-          requestAnimationFrame(loop);
-          return;
-        }
-        canvasRef.current.width = w;
-        canvasRef.current.height = h;
-        ctx.clearRect(0, 0, w, h);
-        if (showOverlays) {
-          // Faces
-          for (const f of faces) {
-            if (f.box) {
-              const [x, y, bw, bh] = f.box; // pixels
-              ctx.strokeStyle = 'rgba(59,130,246,0.9)';
-              ctx.lineWidth = 2;
-              ctx.strokeRect(x, y, bw, bh);
-            }
-            if (f.mesh) {
-              ctx.fillStyle = 'rgba(59,130,246,0.6)';
-              for (const p of f.mesh) {
-                ctx.beginPath();
-                ctx.arc(p.x, p.y, 1.2, 0, Math.PI * 2);
-                ctx.fill();
-              }
-            }
-          }
-          // Hands
-          for (const hnd of hands) {
-            const pts = hnd.keypoints;
-            if (pts) {
-              ctx.fillStyle = 'rgba(16,185,129,0.9)';
-              for (const p of pts) {
-                ctx.beginPath();
-                ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
-                ctx.fill();
-              }
-            }
-            if (hnd.box) {
-              const [x, y, bw, bh] = hnd.box; // pixels
-              ctx.strokeStyle = 'rgba(16,185,129,0.9)';
-              ctx.lineWidth = 2;
-              ctx.strokeRect(x, y, bw, bh);
-            }
-          }
-        }
-      }
-
-      const t1 = performance.now();
-      const curFps = 1000 / (t1 - t0);
-      setFps(curFps);
-
-      requestAnimationFrame(loop);
-    }
-
-    init();
+    setup();
 
     return () => {
       running = false;
-      if (videoRef.current && videoRef.current.srcObject) {
-        const tracks = videoRef.current.srcObject.getTracks();
-        tracks.forEach((t) => t.stop());
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      if (stream) {
+        stream.getTracks().forEach((t) => t.stop());
+      }
+      if (canvasRef.current) {
+        const ctx = canvasRef.current.getContext('2d');
+        if (ctx) ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
       }
     };
-  }, [onUpdate, showOverlays]);
+  }, [showOverlays, onUpdate]);
 
   return (
     <div className="relative w-full aspect-video bg-black rounded-xl overflow-hidden">
-      <video ref={videoRef} className="w-full h-full object-cover" muted playsInline />
-      <canvas ref={canvasRef} className="absolute inset-0" />
-      <div className="absolute bottom-2 right-2 text-xs bg-black/50 text-white px-2 py-1 rounded-md">{ready ? `${fps.toFixed(1)} fps` : 'Loading...'}</div>
+      <video ref={videoRef} className="w-full h-full object-cover" playsInline muted />
+      <canvas ref={canvasRef} className={`absolute inset-0 ${showOverlays ? '' : 'hidden'}`} />
+      {!ready && (
+        <div className="absolute inset-0 flex items-center justify-center text-white/90 text-sm bg-black/30">
+          Initializing camera and models...
+        </div>
+      )}
     </div>
   );
-};
-
-export default CameraFeed;
+}

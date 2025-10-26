@@ -1,41 +1,41 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 
-const Stat = ({ label, value }) => (
-  <div className="p-3 rounded-lg bg-white/60 backdrop-blur border border-gray-200">
-    <div className="text-xs text-gray-500">{label}</div>
-    <div className="text-lg font-semibold">{value}</div>
-  </div>
-);
-
-const HandMath = ({ left = 0, right = 0 }) => {
-  const ops = useMemo(() => {
-    const a = left ?? 0;
-    const b = right ?? 0;
-    return {
-      sum: a + b,
-      diff: Math.abs(a - b),
-      prod: a * b,
-      div: b !== 0 ? (a / b).toFixed(2) : '∞',
-    };
-  }, [left, right]);
+export default function HandMath({ left = 0, right = 0 }) {
+  const a = Number.isFinite(left) ? left : 0;
+  const b = Number.isFinite(right) ? right : 0;
+  const sum = a + b;
+  const diff = a - b;
+  const prod = a * b;
+  const div = b === 0 ? '∞' : (a / b).toFixed(2);
 
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3">
-        <Stat label="Left fingers" value={left} />
-        <Stat label="Right fingers" value={right} />
+    <div className="p-4 rounded-xl bg-white/70 dark:bg-zinc-900/70 backdrop-blur border border-zinc-200/50 dark:border-zinc-800/50">
+      <h3 className="text-lg font-semibold mb-3">Hand Math</h3>
+      <div className="grid grid-cols-2 gap-3 text-sm mb-4">
+        <div className="p-3 rounded-lg bg-zinc-50 dark:bg-zinc-800/60">
+          <div className="text-zinc-500">Left Hand</div>
+          <div className="text-2xl font-bold">{a}</div>
+        </div>
+        <div className="p-3 rounded-lg bg-zinc-50 dark:bg-zinc-800/60">
+          <div className="text-zinc-500">Right Hand</div>
+          <div className="text-2xl font-bold">{b}</div>
+        </div>
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        <Stat label="Sum (L + R)" value={ops.sum} />
-        <Stat label="Difference |L - R|" value={ops.diff} />
-        <Stat label="Multiply (L × R)" value={ops.prod} />
-        <Stat label="Division (L ÷ R)" value={ops.div} />
+      <div className="space-y-2 text-sm">
+        <Row label="Sum" value={sum} />
+        <Row label="Difference" value={diff} />
+        <Row label="Product" value={prod} />
+        <Row label="Division" value={div} />
       </div>
-      <p className="text-xs text-gray-500">
-        Tip: Show your hands to the camera. We'll count extended fingers on each hand and do the math for you.
-      </p>
     </div>
   );
-};
+}
 
-export default HandMath;
+function Row({ label, value }) {
+  return (
+    <div className="flex items-center justify-between p-2 rounded-lg bg-zinc-50 dark:bg-zinc-800/60">
+      <span className="text-zinc-600 dark:text-zinc-300">{label}</span>
+      <span className="font-semibold">{value}</span>
+    </div>
+  );
+}
