@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
-import * as Human from '@vladmandic/human';
+import Human from '@vladmandic/human';
 
 const humanConfig = {
   cacheSensitivity: 0.75,
   filter: { enabled: true },
-  modelBasePath: 'https://cdn.jsdelivr.net/npm/@vladmandic/human/models',
+  // Use official CDN for models so it works out of the box
+  modelBasePath: 'https://vladmandic.github.io/human/models',
   face: { enabled: true, mesh: true, iris: true, attention: false, emotion: true, detector: { rotation: true } },
   hand: { enabled: true, detector: { rotation: true } },
   body: { enabled: false },
@@ -18,44 +19,38 @@ function distance(a, b) {
 }
 
 function eyeAspectRatio(landmarks) {
-  // Using MediaPipe indices mapping for 468 mesh
-  const L = {
-    p1: 33, p2: 160, p3: 158, p4: 133, p5: 153, p6: 144,
-  };
-  const R = {
-    p1: 263, p2: 387, p3: 385, p4: 362, p5: 380, p6: 373,
-  };
+  // MediaPipe FaceMesh indices for both eyes
+  const L = { p1: 33, p2: 160, p3: 158, p4: 133, p5: 153, p6: 144 };
+  const R = { p1: 263, p2: 387, p3: 385, p4: 362, p5: 380, p6: 373 };
   const l = [L.p1, L.p2, L.p3, L.p4, L.p5, L.p6].map((i) => [landmarks[i].x, landmarks[i].y]);
   const r = [R.p1, R.p2, R.p3, R.p4, R.p5, R.p6].map((i) => [landmarks[i].x, landmarks[i].y]);
   const earL = (distance(l[1], l[5]) + distance(l[2], l[4])) / (2 * distance(l[0], l[3]));
   const earR = (distance(r[1], r[5]) + distance(r[2], r[4])) / (2 * distance(r[0], r[3]));
   const ear = (earL + earR) / 2;
-  // Normalize approximate EAR to 0..1 range (empirical bounds 0.15..0.35)
+  // Normalize EAR approx to 0..1 using rough bounds (0.15..0.35)
   const norm = Math.min(1, Math.max(0, (ear - 0.15) / (0.35 - 0.15)));
   return norm;
 }
 
 function countFingers(hand) {
-  // hand.keypoints: 21 points with x,y
   const kp = hand.keypoints;
   if (!kp || kp.length < 21) return 0;
-  // Indexes per MediaPipe Hands
   const tips = { index: 8, middle: 12, ring: 16, pinky: 20 };
   const pips = { index: 6, middle: 10, ring: 14, pinky: 18 };
-
   let count = 0;
-  // Fingers other than thumb: tip.y < pip.y means extended (coordinate origin top-left)
+  // For non-thumb, y smaller than PIP means extended (origin top-left)
   for (const f of ['index', 'middle', 'ring', 'pinky']) {
     if (kp[tips[f]].y < kp[pips[f]].y) count += 1;
   }
-  // Thumb: compare x depending on hand label (left/right)
   const thumbTip = kp[4];
   const thumbIP = kp[3];
   let isRight = false;
   if (hand.label) {
     isRight = hand.label.toLowerCase().includes('right');
+  } else if (hand.handedness) {
+    isRight = hand.handedness.toLowerCase().includes('right');
   } else {
-    // Heuristic: if index MCP x < pinky MCP x, it's a right hand (camera mirrored)
+    // Heuristic using MCPs (indices 5 and 17)
     isRight = kp[5].x < kp[17].x;
   }
   if (isRight) {
@@ -75,18 +70,18 @@ const CameraFeed = ({ onUpdate, showOverlays = true }) => {
 
   useEffect(() => {
     let running = true;
-    const human = new Human.Human(humanConfig);
+    const human = new Human(humanConfig);
     humanRef.current = human;
 
     async function init() {
       try {
         await human.load();
         await human.warmup();
-        setReady(true);
         const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
         if (!videoRef.current) return;
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
+        setReady(true);
         loop();
       } catch (e) {
         console.error('Camera init error', e);
@@ -98,41 +93,35 @@ const CameraFeed = ({ onUpdate, showOverlays = true }) => {
       const t0 = performance.now();
       const result = await human.detect(videoRef.current);
 
-      // Compute stats
       const faces = result.face || [];
       const peopleCount = faces.length;
       let happiness = 0;
       let eyeOpen = 0;
       if (faces.length > 0) {
-        // Happiness from emotion classifier
         const emotions = faces[0].emotion || [];
         const happy = emotions.find((e) => e.expression === 'happy');
         if (happy) happiness = happy.score;
-        // Eye openness from landmarks
         if (faces[0].mesh && faces[0].mesh.length > 0) {
           eyeOpen = eyeAspectRatio(faces[0].mesh);
         }
       }
 
-      // Hands and finger counting
       const hands = result.hand || [];
-      // Determine left/right
       let left = 0, right = 0;
       for (const h of hands) {
         const fingers = countFingers(h);
-        const cx = h.box ? (h.box[0] + h.box[2]) / 2 : (h.keypoints[0]?.x || 0.5);
-        const isRight = h.label ? h.label.toLowerCase().includes('right') : cx < 0.5; // assuming mirrored selfie
+        let isRight = false;
+        if (h.label) isRight = h.label.toLowerCase().includes('right');
+        else if (h.handedness) isRight = h.handedness.toLowerCase().includes('right');
+        else if (h.box) {
+          const cx = h.box[0] + h.box[2] / 2; // box: [x, y, w, h]
+          const mid = videoRef.current.videoWidth / 2;
+          isRight = cx < mid; // selfie view
+        }
         if (isRight) right = Math.max(right, fingers); else left = Math.max(left, fingers);
       }
 
-      const payload = {
-        peopleCount,
-        happiness,
-        eyeOpen,
-        leftFingers: left,
-        rightFingers: right,
-      };
-      onUpdate && onUpdate(payload);
+      onUpdate && onUpdate({ peopleCount, happiness, eyeOpen, leftFingers: left, rightFingers: right });
 
       // Draw overlays
       const ctx = canvasRef.current?.getContext('2d');
@@ -149,16 +138,16 @@ const CameraFeed = ({ onUpdate, showOverlays = true }) => {
           // Faces
           for (const f of faces) {
             if (f.box) {
-              const [x, y, x2, y2] = f.box.map((v, i) => (i % 2 === 0 ? v * w : v * h));
+              const [x, y, bw, bh] = f.box; // pixels
               ctx.strokeStyle = 'rgba(59,130,246,0.9)';
               ctx.lineWidth = 2;
-              ctx.strokeRect(x, y, x2 - x, y2 - y);
+              ctx.strokeRect(x, y, bw, bh);
             }
             if (f.mesh) {
               ctx.fillStyle = 'rgba(59,130,246,0.6)';
               for (const p of f.mesh) {
                 ctx.beginPath();
-                ctx.arc(p.x * w, p.y * h, 1.2, 0, Math.PI * 2);
+                ctx.arc(p.x, p.y, 1.2, 0, Math.PI * 2);
                 ctx.fill();
               }
             }
@@ -170,15 +159,15 @@ const CameraFeed = ({ onUpdate, showOverlays = true }) => {
               ctx.fillStyle = 'rgba(16,185,129,0.9)';
               for (const p of pts) {
                 ctx.beginPath();
-                ctx.arc(p.x * w, p.y * h, 2, 0, Math.PI * 2);
+                ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
                 ctx.fill();
               }
             }
             if (hnd.box) {
-              const [x, y, x2, y2] = hnd.box.map((v, i) => (i % 2 === 0 ? v * w : v * h));
+              const [x, y, bw, bh] = hnd.box; // pixels
               ctx.strokeStyle = 'rgba(16,185,129,0.9)';
               ctx.lineWidth = 2;
-              ctx.strokeRect(x, y, x2 - x, y2 - y);
+              ctx.strokeRect(x, y, bw, bh);
             }
           }
         }

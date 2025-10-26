@@ -3,18 +3,18 @@
 > vite
 
 
-  VITE v5.4.20  ready in 328 ms
+  VITE v5.4.20  ready in 339 ms
 
   ➜  Local:   http://localhost:3000/
   ➜  Network: http://172.20.10.143:3000/
-1:39:19 PM [vite] Pre-transform error: Failed to resolve import "@vladmandic/human" from "src/components/CameraFeed.jsx". Does the file exist?
-1:39:20 PM [vite] Internal server error: Failed to resolve import "@vladmandic/human" from "src/components/CameraFeed.jsx". Does the file exist?
+1:42:22 PM [vite] Pre-transform error: Failed to resolve import "@vladmandic/human" from "src/components/CameraFeed.jsx". Does the file exist?
+1:42:23 PM [vite] Internal server error: Failed to resolve import "@vladmandic/human" from "src/components/CameraFeed.jsx". Does the file exist?
   Plugin: vite:import-analysis
-  File: /home/workspace/src/components/CameraFeed.jsx:2:23
+  File: /home/workspace/src/components/CameraFeed.jsx:2:18
   1  |  import { jsxDEV } from "react/jsx-dev-runtime";
   2  |  import React, { useEffect, useRef, useState } from "react";
-  3  |  import * as Human from "@vladmandic/human";
-     |                          ^
+  3  |  import Human from "@vladmandic/human";
+     |                     ^
   4  |  const humanConfig = {
   5  |    cacheSensitivity: 0.75,
       at TransformPluginContext._formatError (file:///home/workspace/node_modules/vite/dist/node/chunks/dep-D_zLpgQd.js:49258:41)
@@ -27,13 +27,13 @@
       at async PluginContainer.transform (file:///home/workspace/node_modules/vite/dist/node/chunks/dep-D_zLpgQd.js:49099:18)
       at async loadAndTransform (file:///home/workspace/node_modules/vite/dist/node/chunks/dep-D_zLpgQd.js:51977:27)
       at async viteTransformMiddleware (file:///home/workspace/node_modules/vite/dist/node/chunks/dep-D_zLpgQd.js:62105:24)
-1:39:34 PM [vite] Internal server error: Failed to resolve import "@vladmandic/human" from "src/components/CameraFeed.jsx". Does the file exist?
+1:42:38 PM [vite] Internal server error: Failed to resolve import "@vladmandic/human" from "src/components/CameraFeed.jsx". Does the file exist?
   Plugin: vite:import-analysis
-  File: /home/workspace/src/components/CameraFeed.jsx:2:23
+  File: /home/workspace/src/components/CameraFeed.jsx:2:18
   1  |  import { jsxDEV } from "react/jsx-dev-runtime";
   2  |  import React, { useEffect, useRef, useState } from "react";
-  3  |  import * as Human from "@vladmandic/human";
-     |                          ^
+  3  |  import Human from "@vladmandic/human";
+     |                     ^
   4  |  const humanConfig = {
   5  |    cacheSensitivity: 0.75,
       at TransformPluginContext._formatError (file:///home/workspace/node_modules/vite/dist/node/chunks/dep-D_zLpgQd.js:49258:41)
