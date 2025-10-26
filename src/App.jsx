@@ -13,20 +13,24 @@ export default function App() {
     rightFingers: 0,
   });
   const [showOverlays, setShowOverlays] = useState(true);
+  const [running, setRunning] = useState(false);
 
   const handleUpdate = useCallback((m) => setMetrics((prev) => ({ ...prev, ...m })), []);
+
+  const start = () => setRunning(true);
+  const stop = () => setRunning(false);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-white to-zinc-100 dark:from-zinc-950 dark:to-zinc-900 text-zinc-900 dark:text-zinc-50">
       <div className="max-w-6xl mx-auto px-4 py-8">
         <header className="mb-6">
           <h1 className="text-2xl sm:text-3xl font-bold">Live Face & Hand Math</h1>
-          <p className="text-zinc-600 dark:text-zinc-300 mt-1">Real-time people count, emotion signal, eye openness, and hand-based arithmetic.</p>
+          <p className="text-zinc-600 dark:text-zinc-300 mt-1">Start the camera to see people count, emotion signal, eye openness, and hand-based arithmetic in real time.</p>
         </header>
 
         <section className="grid lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2">
-            <CameraFeed onUpdate={handleUpdate} showOverlays={showOverlays} />
+            <CameraFeed onUpdate={handleUpdate} showOverlays={showOverlays} running={running} />
           </div>
           <div className="space-y-6">
             <FaceStats
@@ -35,7 +39,13 @@ export default function App() {
               eyeOpen={metrics.eyeOpen}
             />
             <HandMath left={metrics.leftFingers} right={metrics.rightFingers} />
-            <ControlsPanel showOverlays={showOverlays} setShowOverlays={setShowOverlays} />
+            <ControlsPanel
+              showOverlays={showOverlays}
+              setShowOverlays={setShowOverlays}
+              running={running}
+              onStart={start}
+              onStop={stop}
+            />
           </div>
         </section>
 
